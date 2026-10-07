@@ -1,7 +1,7 @@
-# expanse-manager-api
+# expanse-report-api
 
 REST API for a multi-company expense management app, built with Laravel.
-The frontend lives in a separate repository: `expanse-manager-web` (Nuxt).
+The frontend lives in a separate repository: `expanse-report-web` (Nuxt).
 
 ## Domain
 
@@ -93,9 +93,40 @@ The project proceeds in levels. Each item becomes one or more issues in the GitH
 ## Don'ts
 
 - Do not add Composer packages without first discussing the need and the alternatives.
-- Do not modify the `expanse-manager-web` repository from this session, unless explicitly asked.
+- Do not modify the `expanse-report-web` repository from this session, unless explicitly asked.
 - Do not run commits, pushes or destructive commands (e.g. `migrate:fresh`) without confirmation.
 
 ## Useful commands
 
-To be filled in as the project takes shape (starting the containers, tests, Pint, Larastan, queue worker).
+PHP and Composer are not installed on the host: every command runs inside the containers.
+See `README.md` for the first-time setup.
+
+```bash
+# Stack
+docker compose up -d                 # start every service
+docker compose ps                    # state and health
+docker compose logs -f app queue     # follow the logs
+docker compose down                  # stop (add -v to also delete the data volumes)
+docker compose build app             # rebuild the PHP image after changing docker/php/Dockerfile
+
+# Application (inside the "app" container)
+docker compose exec app php artisan <command>
+docker compose exec app composer <command>
+docker compose exec app php artisan test
+docker compose exec app ./vendor/bin/pint
+
+# Queue worker: it keeps code and configuration in memory
+docker compose restart queue         # after changing a job or .env
+
+# Data stores
+docker compose exec mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"'
+docker compose exec redis redis-cli
+docker compose exec mongo sh -c 'mongosh -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin'
+```
+
+Notes:
+
+- Compose reads the Laravel `.env` to interpolate `compose.yaml`: avoid `$` in values, or wrap them in single quotes.
+- MySQL and MongoDB credentials are applied only when their volume is first initialised: changing them in
+  `.env` afterwards has no effect until the volume is recreated (`docker compose down -v`, which deletes the data).
+- Larastan is not installed yet (Level 4).
