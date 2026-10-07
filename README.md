@@ -1,58 +1,78 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# expanse-report-api
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+REST API for a multi-company expense management app: employees upload expenses with a receipt,
+managers approve them and administration reimburses them.
 
-## About Laravel
+Built with Laravel 13 (API only). The frontend lives in a separate repository, `expanse-report-web` (Nuxt).
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Requirements
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- Docker with Docker Compose v2
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+PHP and Composer are not needed on the host: they run inside the containers.
 
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## First-time setup
 
 ```bash
-composer require laravel/boost --dev
+# 1. Environment file: replace the placeholder passwords before the first start
+cp .env.example .env
 
-php artisan boost:install
+# 2. Build the PHP image
+docker compose build
+
+# 3. Install the dependencies and generate the application key
+docker compose run --rm --no-deps app composer install
+docker compose run --rm --no-deps app php artisan key:generate
+
+# 4. Start the stack and create the database tables
+docker compose up -d
+docker compose exec app php artisan migrate
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+The API answers on <http://localhost:8080>; `GET /up` is the health check.
 
-## Contributing
+Two things to know about `.env`:
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+- Compose reads it to interpolate `compose.yaml`, so avoid `$` in values or wrap them in single quotes.
+- MySQL and MongoDB credentials are applied only when their volume is first initialised. To change them
+  later, recreate the volumes with `docker compose down -v` (this deletes the data).
 
-## Code of Conduct
+If your user ID is not 1000, set `HOST_UID` and `HOST_GID` in `.env` before building, so that files
+written by the containers belong to you.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Services
 
-## Security Vulnerabilities
+| Service   | Image                   | Purpose                                   | Host access                      |
+|-----------|-------------------------|-------------------------------------------|----------------------------------|
+| `app`     | custom (`php:8.5-fpm`)  | Laravel application on PHP-FPM            | –                                |
+| `queue`   | same image as `app`     | Queue worker (`queue:work`)               | –                                |
+| `web`     | `nginx:1.30-alpine`     | HTTP entry point, forwards to PHP-FPM     | <http://localhost:8080>          |
+| `mysql`   | `mysql:9.7`             | Relational data                           | `127.0.0.1:3307`                 |
+| `redis`   | `redis:8.10`            | Cache, sessions and queues                | –                                |
+| `mongo`   | `mongo:7.0`             | Audit log and raw receipt data            | –                                |
+| `mailpit` | `axllent/mailpit:v1.31` | Catches outgoing email                    | <http://localhost:8025>          |
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Published ports are bound to `127.0.0.1` only. Services without host access are reachable from the other
+containers by their service name (for example `redis:6379`).
 
-## License
+## Everyday commands
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```bash
+docker compose up -d                           # start
+docker compose ps                              # state and health
+docker compose logs -f app queue               # follow the logs
+docker compose down                            # stop
+
+docker compose exec app php artisan <command>
+docker compose exec app php artisan test
+docker compose exec app ./vendor/bin/pint
+
+docker compose restart queue                   # after changing a job or .env
+```
+
+The queue worker keeps code and configuration in memory: restart it after changing a job or `.env`,
+otherwise it keeps running the old version.
+
+## Project conventions
+
+Architecture, conventions, Git workflow (Gitflow) and roadmap are described in [`CLAUDE.md`](CLAUDE.md).
