@@ -114,6 +114,31 @@ services:
       - "127.0.0.1:8025:8025"
     restart: unless-stopped
 
+  # MongoDB: append-only audit log and raw receipt data. Root credentials come from .env
+  # and are applied only when the volume is first initialised. No published port.
+  mongo:
+    # Pinned to 7.0 on purpose: the 8.0 and 9.0 images refuse to start on hosts running
+    # Linux kernel 6.19 or newer (SERVER-121912). Re-check before upgrading.
+    image: mongo:7.0
+    volumes:
+      - mongo-data:/data/db
+      # Declared by the image: mapped only to avoid a new anonymous volume on every recreate.
+      - mongo-config:/data/configdb
+    healthcheck:
+      # "ping" needs no authentication, so the password stays out of the command line.
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand({ ping: 1 }).ok ? 0 : 1)"]
+      interval: 10s
+      start_interval: 2s
+      retries: 5
+      start_period: 20s
+      timeout: 5s
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "${MONGO_INITDB_ROOT_USERNAME:?set MONGO_INITDB_ROOT_USERNAME in .env (see .env.example)}"
+      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_INITDB_ROOT_PASSWORD:?set MONGO_INITDB_ROOT_PASSWORD in .env (see .env.example)}"
+    restart: unless-stopped
+
 volumes:
   mysql-data:
   redis-data:
+  mongo-data:
+  mongo-config:
