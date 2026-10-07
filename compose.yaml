@@ -1,5 +1,5 @@
 # Development services. One process per container; every service is added explicitly.
-name: expanse-manager
+name: expanse-report
 
 services:
   # PHP-FPM running the Laravel application. Speaks FastCGI on port 9000,
@@ -12,6 +12,10 @@ services:
         GID: ${HOST_GID:-1000}
     volumes:
       - .:/var/www/html
+    depends_on:
+      mysql:
+        condition: service_healthy
+        restart: true
     restart: unless-stopped
 
   # nginx: terminates HTTP, serves static files from public/ and forwards
@@ -27,3 +31,28 @@ services:
     depends_on:
       - app
     restart: unless-stopped
+
+  # MySQL: relational data. Credentials come from .env and are applied only
+  # when the volume is first initialised (recreate it with "down -v" to change them).
+  mysql:
+    image: mysql:9.7
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    environment:
+      MYSQL_DATABASE: "${DB_DATABASE:?set DB_DATABASE in .env (see .env.example)}"
+      MYSQL_USER: "${DB_USERNAME:?set DB_USERNAME in .env (see .env.example)}"
+      MYSQL_PASSWORD: "${DB_PASSWORD:?set DB_PASSWORD in .env (see .env.example)}"
+      MYSQL_ROOT_PASSWORD: "${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env (see .env.example)}"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 10s
+      start_interval: 2s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
