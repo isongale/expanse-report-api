@@ -106,6 +106,14 @@ services:
       timeout: 5s
     restart: unless-stopped
 
+  # Mailpit: catches every email sent by the app. Web UI on http://localhost:8025;
+  # SMTP (mailpit:1025) is reachable only from the internal network.
+  mailpit:
+    image: axllent/mailpit:v1.31
+    ports:
+      - "127.0.0.1:8025:8025"
+    restart: unless-stopped
+
 volumes:
   mysql-data:
   redis-data:
