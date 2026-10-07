@@ -10,12 +10,43 @@ services:
       args:
         UID: ${HOST_UID:-1000}
         GID: ${HOST_GID:-1000}
+    # Explicit name: the "queue" service runs this same image.
+    image: expanse-report-app
     volumes:
       - .:/var/www/html
     depends_on:
       mysql:
         condition: service_healthy
         restart: true
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Queue worker: same image and code as "app", different process.
+  # It keeps the code in memory: run "docker compose restart queue" after changing a job.
+  queue:
+    build:
+      context: ./docker/php
+      args:
+        UID: ${HOST_UID:-1000}
+        GID: ${HOST_GID:-1000}
+    image: expanse-report-app
+    # List form, so PHP is PID 1 and receives the stop signal directly.
+    # --timeout must stay below retry_after (90s, config/queue.php);
+    # --max-time makes the worker exit hourly and "restart" brings it back with fresh memory.
+    command: ["php", "artisan", "queue:work", "--tries=3", "--timeout=60", "--max-time=3600"]
+    # The image inherits SIGQUIT from php-fpm; the worker's documented graceful signal is SIGTERM.
+    stop_signal: SIGTERM
+    # Longer than --timeout: a running job can finish before Docker sends SIGKILL.
+    stop_grace_period: 70s
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      mysql:
+        condition: service_healthy
+        restart: true
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   # nginx: terminates HTTP, serves static files from public/ and forwards
@@ -54,5 +85,27 @@ services:
       timeout: 10s
     restart: unless-stopped
 
+  # Redis: queues and sessions (database 0), cache (database 1).
+  # No published port: use "docker compose exec redis redis-cli".
+  redis:
+    image: redis:8.10
+    # --appendonly: every write is logged to disk, so queued jobs survive a restart.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env (see .env.example)}", "--appendonly", "yes"]
+    environment:
+      # Read by redis-cli: the healthcheck authenticates without the password in its command line.
+      REDISCLI_AUTH: "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env (see .env.example)}"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      # redis-cli exits 0 even on an auth error, so check the reply itself.
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      start_interval: 2s
+      retries: 5
+      start_period: 10s
+      timeout: 5s
+    restart: unless-stopped
+
 volumes:
   mysql-data:
+  redis-data:
